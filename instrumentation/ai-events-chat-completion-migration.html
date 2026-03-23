@@ -395,7 +395,12 @@
 <!-- Header -->
 <header>
   <h1>AI Events &amp; Metrics Consistency Review</h1>
-  <p class="subtitle">Product Manager alignment doc for the Chat Completion migration (PRs #23767 &rarr; #23685 &rarr; #23698). Goal: ensure correct instrumentation across Builder Agent, Agent Config Assistant, and future AI features so every event is queryable by feature, resource, and turn.</p>
+  <p class="subtitle">Product alignment document for the Chat Completion migration (PRs #23767 &rarr; #23685 &rarr; #23698). Goal: ensure correct instrumentation across Builder Agent, Agent Config Assistant, and future AI features so every event is queryable by feature, resource, and turn.</p>
+  <div style="margin-top:0.75rem;padding:0.75rem 1rem;background:var(--surface);border-radius:8px;font-size:0.85rem;color:var(--text-muted);line-height:1.6;">
+    <strong style="color:var(--text);">Author:</strong> Ana Manzanares (PM, AI Product Area)<br>
+    <strong style="color:var(--text);">Audience:</strong> Engineering teams working on the 3 PRs + <strong>Victor Folque</strong> (Data Analyst, dashboards &amp; BQ queries)<br>
+    <strong style="color:var(--text);">Purpose:</strong> Align on instrumentation requirements, field naming, and event schema <em>before</em> code ships &mdash; so dashboards, Segment destinations, and BQ queries work correctly from day one.
+  </div>
   <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-top:1rem;">
     <a class="pr-link" style="background:var(--green-dim);color:var(--green);" href="https://github.com/CartoDB/cloud-native/pull/23767" target="_blank">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"></path></svg>
