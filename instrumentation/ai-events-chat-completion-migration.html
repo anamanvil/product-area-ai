@@ -474,7 +474,42 @@
     <h4>2. Is <code>turnId</code> worth the effort?</h4>
     <p style="margin-bottom:0.5rem;"><strong>The problem:</strong> In v2, a single user message can trigger multiple internal LLM calls (tool use loops). Without <code>turnId</code>, we can't correlate which Request, ToolInvoked, ToolExecuted, Response, and Error events belong to the same user message.</p>
     <p style="margin-bottom:0.5rem;"><strong>The implementation:</strong> One line: <code>const turnId = crypto.randomUUID()</code> in the v2 middleware, passed through to all events. Minimal effort.</p>
-    <p><strong>Question for the team:</strong> Do we need per-turn correlation for debugging and analytics, or is <code>conversationId</code> granularity enough? If we're building dashboards that show "tool execution success rate per user message" or "which messages cause errors", we need <code>turnId</code>.</p>
+    <p style="margin-bottom:0.5rem;"><strong>Metrics that require <code>turnId</code>:</strong></p>
+    <div class="table-wrapper" style="margin-bottom:0.75rem;">
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Without <code>turnId</code></th><th>With <code>turnId</code></th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Tool success rate</strong></td>
+            <td>Per conversation only &mdash; a 10-turn conversation with 1 failure = 90% but you can't tell which turn failed</td>
+            <td>Per user message &mdash; "turn 3 had 2/3 tools succeed"</td>
+          </tr>
+          <tr>
+            <td><strong>Retry success rate</strong></td>
+            <td>Impossible &mdash; can't distinguish first attempt vs retry within a conversation</td>
+            <td>Group by <code>turnId</code> + <code>toolName</code> &rarr; count attempts, check if last succeeded</td>
+          </tr>
+          <tr>
+            <td><strong>Turn latency</strong></td>
+            <td>Can only measure conversation-level time (first request &rarr; last response)</td>
+            <td><code>MAX(ts) - MIN(ts) WHERE turnId = X</code> &rarr; time from user message to final response</td>
+          </tr>
+          <tr>
+            <td><strong>Error attribution</strong></td>
+            <td>"Conversation X had an error" &mdash; which of the 8 messages caused it?</td>
+            <td>"Turn 5 in conversation X caused error Y after tool Z"</td>
+          </tr>
+          <tr>
+            <td><strong>Tool chain analysis</strong></td>
+            <td>Flat list of all tools used in a conversation, no ordering within turns</td>
+            <td>Sequence of tools per turn &mdash; "users who query first, then visualize, succeed more"</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Question for the team:</strong> These metrics are essential for understanding AI quality and reliability. The effort is one line of code. Do we agree this is a Must for Phase 2?</p>
   </div>
 
   <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
