@@ -465,13 +465,13 @@
 
   <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
     <h4>1. Should we rename events from <code>AIAgent*</code> to <code>AI*</code> + <code>feature</code>?</h4>
-    <p style="margin-bottom:0.5rem;"><strong>The benefit:</strong> Any new AI feature (SQL Assistant, Workflow AI, etc.) gets all chat events for free &mdash; just pass <code>feature: 'sql-assistant'</code> to <code>useChatAgent</code>. Zero new event types to create, zero new dashboards to build. One <code>WHERE feature = '...'</code> in BQ isolates any feature.</p>
+    <p style="margin-bottom:0.5rem;"><strong>The benefit:</strong> Any new AI feature (Workflows Assistant, DO Assistant, etc.) gets all chat events for free &mdash; just pass <code>feature: 'workflows-assistant'</code> to <code>useChatAgent</code>. Zero new event types to create, zero new dashboards to build. One <code>WHERE feature = '...'</code> in BQ isolates any feature.</p>
     <p style="margin-bottom:0.5rem;"><strong>The cost:</strong> Renaming means updating existing BQ dashboards and Segment destinations. Old event names need a transition period (fire both old + new). This is real work.</p>
     <p><strong>Question for the team:</strong> Do we rename now (Phase 3) or keep <code>AIAgent*</code> names and add <code>feature</code> as an additional field without renaming? Both approaches give us the <code>feature</code> dimension &mdash; renaming is cleaner long-term but more disruptive short-term.</p>
   </div>
 
-  <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
-    <h4>2. Is <code>turnId</code> worth the effort?</h4>
+  <div class="issue-card" style="border-left:3px solid var(--green);margin-bottom:1rem;">
+    <h4>2. <code>turnId</code> &mdash; confirmed requirement for Phase 2</h4>
     <p style="margin-bottom:0.5rem;"><strong>The problem:</strong> In v2, a single user message can trigger multiple internal LLM calls (tool use loops). Without <code>turnId</code>, we can't correlate which Request, ToolInvoked, ToolExecuted, Response, and Error events belong to the same user message.</p>
     <p style="margin-bottom:0.5rem;"><strong>The implementation:</strong> One line: <code>const turnId = crypto.randomUUID()</code> in the v2 middleware, passed through to all events. Minimal effort.</p>
     <p style="margin-bottom:0.5rem;"><strong>Metrics that require <code>turnId</code>:</strong></p>
@@ -509,7 +509,7 @@
         </tbody>
       </table>
     </div>
-    <p><strong>Question for the team:</strong> These metrics are essential for understanding AI quality and reliability. The effort is one line of code. Do we agree this is a Must for Phase 2?</p>
+    <p><strong>Decision: <code>turnId</code> is a Must for Phase 2.</strong> These metrics are essential for understanding AI quality and reliability. The effort is one line of code. Without per-turn correlation, we cannot measure tool success rates, retry behavior, or latency at the level needed to improve the product.</p>
   </div>
 
   <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
@@ -518,7 +518,7 @@
     <p style="margin-bottom:0.5rem;"><strong>What "for free" means concretely:</strong></p>
     <ul style="margin:0;padding-left:1.5rem;color:var(--text-muted);font-size:0.88rem;">
       <li>Agent Config Assistant (PR #23767): zero manual event code &mdash; hook handles everything</li>
-      <li>Future SQL Assistant: just call <code>useChatAgent({ feature: 'sql-assistant', connectionId })</code> and all events are tracked</li>
+      <li>Future Workflows Assistant: just call <code>useChatAgent({ feature: 'workflows-assistant', workflowId })</code> and all events are tracked</li>
       <li>No risk of forgetting to add tracking when shipping a new AI feature</li>
     </ul>
     <p style="margin-top:0.5rem;"><strong>Question for the team:</strong> Are we aligned that <code>useChatAgent</code> is the single source of truth for chat event firing? This means removing duplicate event calls from <code>genAiHooks.ts</code>, <code>BuilderAIChat.tsx</code>, etc. in Phase 3.</p>
@@ -817,7 +817,7 @@
       <h4>Future AI Features</h4>
       <div class="path">/feature/{x}/{y}</div>
       <ul>
-        <li>SQL Assistant, Data Explorer AI, etc.</li>
+        <li>Workflows Assistant, DO Assistant, etc.</li>
         <li>Will likely use <code>useChatAgent</code></li>
         <li>Will fire same <code>AIAgent*</code> events</li>
         <li>No way to distinguish in telemetry</li>
@@ -846,7 +846,7 @@
       <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:1rem;">
         Every backend and frontend AI event should include a <code>feature</code> discriminator so analytics can filter and compare across AI products.
       </p>
-      <pre><span class="field">feature</span>: <span class="str">'aiagent'</span> | <span class="str">'aiagent_assistant'</span> | <span class="str">'sql-assistant'</span> | <span class="type">string</span></pre>
+      <pre><span class="field">feature</span>: <span class="str">'aiagent'</span> | <span class="str">'aiagent_assistant'</span> | <span class="str">'workflows-assistant'</span> | <span class="str">'do-assistant'</span> | <span class="type">string</span></pre>
 
       <div class="callout" style="margin:0.75rem 0;">
         <strong>Key insight: <code>ai_feature</code> already exists in prompt config.</strong> Each prompt file declares its <code>ai_feature</code> value (e.g. <code>aiagent</code>, <code>aiagent_assistant</code>). This already flows to <code>AIConsumedEvent</code> and <code>AIRequestGotOverquotaEvent</code> via the metrics/quota pipeline. The proposal is to use the same <code>ai_feature</code> value as the <code>feature</code> discriminator on <em>all</em> AI events (Request, Response, ToolExecuted, etc.), so every event in BQ is filterable by feature.
@@ -1014,8 +1014,8 @@
   <span class="comment">// ── Resource context (null when not applicable) ──────────</span>
   <span class="field">mapId</span>?: <span class="type">string</span>            <span class="comment">// which map — aiagent, aiagent_assistant</span>
   <span class="field">agentId</span>?: <span class="type">string</span>          <span class="comment">// which agent config — aiagent only</span>
-  <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// which workflow — workflow-ai</span>
-  <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// which connection — sql-assistant</span>
+  <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// which workflow — workflows-assistant</span>
+  <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// which connection — do-assistant</span>
 
   <span class="comment">// ── Execution context ────────────────────────────────────</span>
   <span class="field">model</span>?: <span class="type">string</span>            <span class="comment">// which LLM was used</span>
@@ -1031,11 +1031,11 @@
       <div class="table-wrapper">
         <table>
           <thead>
-            <tr><th style="min-width:160px;">Column</th><th>Builder Agent event</th><th>Agent Config Assistant event</th><th>SQL Assistant event (future)</th></tr>
+            <tr><th style="min-width:160px;">Column</th><th>Builder Agent event</th><th>Agent Config Assistant event</th><th>Workflows Assistant event (future)</th></tr>
           </thead>
           <tbody>
             <tr><td><code>event_type</code></td><td><code>AIAgentRequest</code></td><td><code>AIAgentRequest</code></td><td><code>AIAgentRequest</code></td></tr>
-            <tr><td><code>feature</code></td><td><code>aiagent</code></td><td><code>aiagent_assistant</code></td><td><code>sql-assistant</code></td></tr>
+            <tr><td><code>feature</code></td><td><code>aiagent</code></td><td><code>aiagent_assistant</code></td><td><code>workflows-assistant</code></td></tr>
             <tr><td><code>conversationId</code></td><td><code>conv-abc-123</code></td><td><code>conv-def-456</code></td><td><code>conv-ghi-789</code></td></tr>
             <tr><td><code>turnId</code></td><td><code>turn-001</code></td><td><code>turn-002</code></td><td><code>turn-003</code></td></tr>
             <tr><td><code>accountId</code></td><td><code>acc-xyz</code></td><td><code>acc-xyz</code></td><td><code>acc-xyz</code></td></tr>
@@ -1044,8 +1044,8 @@
             <tr><td><code>mapId</code></td><td><code>map-abc</code></td><td><code>map-abc</code></td><td><code>null</code></td></tr>
             <tr><td><code>agentId</code></td><td><code>agent-xyz</code></td><td><code>null</code></td><td><code>null</code></td></tr>
             <tr><td><code>mode</code></td><td><code>live</code></td><td><code>null</code></td><td><code>null</code></td></tr>
-            <tr><td><code>connectionId</code></td><td><code>null</code></td><td><code>null</code></td><td><code>conn-pqr</code></td></tr>
-            <tr><td><code>workflowId</code></td><td><code>null</code></td><td><code>null</code></td><td><code>null</code></td></tr>
+            <tr><td><code>connectionId</code></td><td><code>null</code></td><td><code>null</code></td><td><code>null</code></td></tr>
+            <tr><td><code>workflowId</code></td><td><code>null</code></td><td><code>null</code></td><td><code>wf-stu</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -1083,7 +1083,7 @@
       <div class="table-wrapper">
         <table>
           <thead>
-            <tr><th>Field</th><th>Type</th><th>aiagent</th><th>aiagent_assistant</th><th>sql-assistant</th><th>workflow-ai</th><th>Description</th></tr>
+            <tr><th>Field</th><th>Type</th><th>aiagent</th><th>aiagent_assistant</th><th>workflows-assistant</th><th>do-assistant</th><th>Description</th></tr>
           </thead>
           <tbody>
             <tr><td><code>feature</code></td><td><code>string</code></td><td>Always</td><td>Always</td><td>Always</td><td>Always</td><td>Which AI product generated this event</td></tr>
@@ -1095,8 +1095,8 @@
             <tr><td><code>mapId</code></td><td><code>string?</code></td><td>Yes</td><td>Yes</td><td>&mdash;</td><td>&mdash;</td><td>The map being worked on</td></tr>
             <tr><td><code>agentId</code></td><td><code>string?</code></td><td>Yes</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which agent configuration is active</td></tr>
             <tr><td><code>mode</code></td><td><code>string?</code></td><td>Yes</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td><code>testing</code> or <code>live</code> &mdash; agent test toggle</td></tr>
-            <tr><td><code>connectionId</code></td><td><code>string?</code></td><td>&mdash;</td><td>&mdash;</td><td>Yes</td><td>&mdash;</td><td>Data connection being queried</td></tr>
-            <tr><td><code>workflowId</code></td><td><code>string?</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Yes</td><td>Workflow being assisted</td></tr>
+            <tr><td><code>workflowId</code></td><td><code>string?</code></td><td>&mdash;</td><td>&mdash;</td><td>Yes</td><td>&mdash;</td><td>Workflow being assisted</td></tr>
+            <tr><td><code>connectionId</code></td><td><code>string?</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Yes</td><td>Data connection being queried</td></tr>
             <tr style="background:var(--surface)"><td colspan="7" style="color:var(--text-muted);font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Conversation context</td></tr>
             <tr><td><code>isNewConversation</code></td><td><code>bool?</code></td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>First turn in this conversation</td></tr>
           </tbody>
@@ -1104,7 +1104,7 @@
       </div>
 
       <div class="callout" style="margin-top:0.75rem;">
-        <strong>Adding a new feature:</strong> When a new AI feature ships (e.g. workflow-ai), add its resource field (<code>workflowId</code>) to the type. Existing features are unaffected &mdash; they just have <code>null</code> for <code>workflowId</code>. No schema migration, no breaking changes to existing queries.
+        <strong>Adding a new feature:</strong> When a new AI feature ships (e.g. workflows-assistant), add its resource field (<code>workflowId</code>) to the type. Existing features are unaffected &mdash; they just have <code>null</code> for <code>workflowId</code>. No schema migration, no breaking changes to existing queries.
       </div>
 
       <p style="font-size:0.88rem;margin:0.75rem 0;">
@@ -1297,7 +1297,7 @@
         </tbody>
       </table>
     </div>
-    <p style="color:var(--text-muted);font-size:0.82rem;margin-top:0.5rem;">Key benefit: with generic names + <code>feature</code> field, adding a new AI feature (e.g., SQL Assistant) requires zero new event types. Just pass <code>feature: 'sql-assistant'</code> and all events work. BQ queries use <code>WHERE feature = 'aiagent_assistant'</code> to isolate any feature.</p>
+    <p style="color:var(--text-muted);font-size:0.82rem;margin-top:0.5rem;">Key benefit: with generic names + <code>feature</code> field, adding a new AI feature (e.g., Workflows Assistant) requires zero new event types. Just pass <code>feature: 'workflows-assistant'</code> and all events work. BQ queries use <code>WHERE feature = 'aiagent_assistant'</code> to isolate any feature.</p>
   </div>
 
   <!-- 5.2 feature constant mapping + context type -->
@@ -1308,8 +1308,8 @@
 <span class="kw">export const</span> <span class="type">AIFeature</span> = {
   <span class="field">AGENT</span>: <span class="str">'aiagent'</span>,                       <span class="comment">// Builder Agent (ai_feature in aiagent.prompt)</span>
   <span class="field">AGENT_ASSISTANT</span>: <span class="str">'aiagent_assistant'</span>,  <span class="comment">// Agent Config Assistant (ai_feature in aiagent_assistant.prompt)</span>
-  <span class="field">SQL_ASSISTANT</span>: <span class="str">'sql-assistant'</span>,        <span class="comment">// Future</span>
-  <span class="field">WORKFLOW_AI</span>: <span class="str">'workflow-ai'</span>,            <span class="comment">// Future</span>
+  <span class="field">WORKFLOWS_ASSISTANT</span>: <span class="str">'workflows-assistant'</span>,  <span class="comment">// Future</span>
+  <span class="field">DO_ASSISTANT</span>: <span class="str">'do-assistant'</span>,            <span class="comment">// Future</span>
 } <span class="kw">as const</span>
 
 <span class="kw">type</span> <span class="type">AIFeatureType</span> = <span class="kw">typeof</span> <span class="type">AIFeature</span>[<span class="kw">keyof typeof</span> <span class="type">AIFeature</span>]
@@ -1322,8 +1322,8 @@
   <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span> <span class="comment">// aiagent only</span>
   <span class="field">model</span>?: <span class="type">string</span>            <span class="comment">// current model name (e.g. 'gemini-2.5-pro')</span>
   <span class="field">provider</span>?: <span class="type">ProviderName</span>   <span class="comment">// model provider: 'vertex' | 'openai' | 'bedrock' | 'snowflake' | ...</span>
-  <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// sql-assistant</span>
-  <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// workflow-ai</span>
+  <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// do-assistant</span>
+  <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// workflows-assistant</span>
 }
 
 <span class="comment">// ProviderName — already defined in workspace-api/providers/constants.ts</span>
@@ -1344,16 +1344,16 @@
   <span class="field">mapId</span>: <span class="str">'map-abc'</span>
 })
 
-<span class="comment">// future: useSqlAssistant — no map, has connection</span>
+<span class="comment">// future: useWorkflowsAssistant — no map, has workflow</span>
 <span class="type">useChatAgent</span>({
-  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">SQL_ASSISTANT</span>,
-  <span class="field">connectionId</span>: <span class="str">'conn-pqr'</span>
+  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">WORKFLOWS_ASSISTANT</span>,
+  <span class="field">workflowId</span>: <span class="str">'wf-stu'</span>
 })
 
-<span class="comment">// future: useWorkflowAI — no map, has workflow</span>
+<span class="comment">// future: useDOAssistant — no map, has connection</span>
 <span class="type">useChatAgent</span>({
-  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">WORKFLOW_AI</span>,
-  <span class="field">workflowId</span>: <span class="str">'wf-stu'</span>
+  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">DO_ASSISTANT</span>,
+  <span class="field">connectionId</span>: <span class="str">'conn-pqr'</span>
 })</pre>
 
   <p style="color:var(--text-muted);font-size:0.85rem;margin-top:1rem;margin-bottom:0.5rem;"><strong>What the resulting Segment event looks like:</strong></p>
@@ -1392,14 +1392,14 @@
   <span class="field">mode</span>: <span class="str">"live"</span>
 }
 
-<span class="comment">// Future SQL Assistant → Segment receives:</span>
+<span class="comment">// Future Workflows Assistant → Segment receives:</span>
 {
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
-  <span class="field">feature</span>: <span class="str">"sql-assistant"</span>,
+  <span class="field">feature</span>: <span class="str">"workflows-assistant"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-ghi-789"</span>,
   <span class="field">model</span>: <span class="str">"gpt-4o"</span>,
   <span class="field">provider</span>: <span class="str">"openai"</span>,
-  <span class="field">connectionId</span>: <span class="str">"conn-pqr"</span>
+  <span class="field">workflowId</span>: <span class="str">"wf-stu"</span>
   <span class="comment">// no mapId, no mode, no agentId</span>
 }</pre>
 
@@ -1680,8 +1680,8 @@ Every new AI feature must re-implement tracking</div>
 <span class="green">Every field is a named, typed column in BQ/Segment:</span>
   aiagent:           <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">agentId</span> + <span class="amber">mode</span> + <span class="amber">model</span> + <span class="amber">provider</span>
   aiagent_assistant: <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
-  sql-assistant:     <span class="highlight">feature</span> + <span class="amber">connectionId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
-  workflow-ai:       <span class="highlight">feature</span> + <span class="amber">workflowId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  workflows-assistant: <span class="highlight">feature</span> + <span class="amber">workflowId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  do-assistant:      <span class="highlight">feature</span> + <span class="amber">connectionId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
 
 SELECT feature, provider, model FROM ai_events  <span class="green">← just works</span>
 WHERE provider = 'bedrock'                       <span class="green">← no string parsing</span></div>
