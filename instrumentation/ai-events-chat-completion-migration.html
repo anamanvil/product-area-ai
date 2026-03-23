@@ -445,12 +445,12 @@
         <tr>
           <td>"How does the Agent Config Assistant perform vs the Builder Agent?"</td>
           <td>All events are <code>AIAgent*</code> &mdash; no way to distinguish which AI feature fired them.</td>
-          <td>Add <code>feature</code> field (= <code>ai_feature</code> from prompt config)</td>
+          <td>Add <code>feature</code> field (= API request path, e.g. <code>builder/agent</code>)</td>
         </tr>
         <tr>
           <td>"In a multi-turn conversation, which specific user message caused an error?"</td>
           <td>v2 drops <code>responseId</code> (Responses API concept). All events in a conversation share only <code>conversationId</code>.</td>
-          <td>Add <code>turnId</code> &mdash; a UUID generated per user message in the v2 middleware</td>
+          <td>Add <code>turnId</code> &mdash; a UUID generated on the <strong>frontend</strong> when the user sends a message, passed to the backend in the API request</td>
         </tr>
         <tr>
           <td>"Do users actually look at tool outputs, or do they ignore them?"</td>
@@ -478,7 +478,7 @@
   <div class="issue-card" style="border-left:3px solid var(--green);margin-bottom:1rem;">
     <h4>2. <code>turnId</code> &mdash; confirmed requirement for Phase 2</h4>
     <p style="margin-bottom:0.5rem;"><strong>The problem:</strong> In v2, a single user message can trigger multiple internal LLM calls (tool use loops). Without <code>turnId</code>, we can't correlate which Request, ToolInvoked, ToolExecuted, Response, and Error events belong to the same user message.</p>
-    <p style="margin-bottom:0.5rem;"><strong>The implementation:</strong> One line: <code>const turnId = crypto.randomUUID()</code> in the v2 middleware, passed through to all events. Minimal effort.</p>
+    <p style="margin-bottom:0.5rem;"><strong>The implementation:</strong> Frontend generates <code>const turnId = crypto.randomUUID()</code> when the user sends a message, includes it in the API request. Backend reads it and passes through to all events. A single user turn can trigger multiple backend calls (backend tools &rarr; frontend tool &rarr; new backend call) &mdash; the same <code>turnId</code> must be sent in each call so all events correlate to one user message.</p>
     <p style="margin-bottom:0.5rem;"><strong>Metrics that require <code>turnId</code>:</strong></p>
     <div class="table-wrapper" style="margin-bottom:0.75rem;">
       <table>
@@ -753,7 +753,7 @@
     </p>
     <p><strong>Impact:</strong> Any dashboard or query that groups by <code>responseId</code> to count "per-turn" metrics will collapse all turns into one bucket.</p>
     <div class="recommendation">
-      <strong>Recommendation:</strong> Generate a <code>turnId = crypto.randomUUID()</code> per request in the v2 middleware. Pass it to <code>runAgent</code> and use it in place of <code>responseId</code>. This restores per-turn correlation.
+      <strong>Recommendation:</strong> Generate <code>turnId = crypto.randomUUID()</code> on the <strong>frontend</strong> when the user sends a message. Pass it to the backend in the API request body. The backend reads it and uses it in place of <code>responseId</code> in all events. This must be frontend-generated because a single user turn can trigger multiple backend calls (backend tools &rarr; frontend tool execution &rarr; new backend call), and all calls must share the same <code>turnId</code>.
     </div>
   </div>
 
@@ -799,7 +799,7 @@
   <div class="feature-grid">
     <div class="feature-card">
       <h4>Builder Agent</h4>
-      <div class="path">/feature/aiagent/aiagent</div>
+      <div class="path">/feature/builder/agent</div>
       <ul>
         <li>Main AI agent for map interaction</li>
         <li>Has <code>mapId</code>, tools, delegated actions</li>
@@ -809,11 +809,11 @@
     </div>
     <div class="feature-card">
       <h4>Agent Config Assistant <span class="badge badge-new">New</span></h4>
-      <div class="path">/feature/aiagent_assistant/aiagent_assistant</div>
+      <div class="path">/feature/builder/agent-assistant</div>
       <ul>
         <li>Helps users configure AI agent prompts &amp; tools</li>
         <li>Has <code>mapId</code>, different tool set</li>
-        <li><code>ai_feature: aiagent_assistant</code> in prompt config</li>
+        <li><code>ai_feature: builder/agent-assistant</code> in prompt config</li>
         <li>Uses <code>useBuilderAssistantChatAgent</code> &rarr; <code>useChatAgent</code></li>
         <li>Fires same <code>AIAgent*</code> events &mdash; indistinguishable from Builder Agent</li>
       </ul>
@@ -851,13 +851,13 @@
       <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:1rem;">
         Every backend and frontend AI event should include a <code>feature</code> discriminator so analytics can filter and compare across AI products.
       </p>
-      <pre><span class="field">feature</span>: <span class="str">'aiagent'</span> | <span class="str">'aiagent_assistant'</span> | <span class="str">'workflows-assistant'</span> | <span class="str">'do-assistant'</span> | <span class="type">string</span></pre>
+      <pre><span class="field">feature</span>: <span class="str">'builder/agent'</span> | <span class="str">'builder/agent-assistant'</span> | <span class="str">'workflows/assistant'</span> | <span class="str">'do/assistant'</span> | <span class="type">string</span></pre>
 
       <div class="callout" style="margin:0.75rem 0;">
-        <strong>Key insight: <code>ai_feature</code> already exists in prompt config.</strong> Each prompt file declares its <code>ai_feature</code> value (e.g. <code>aiagent</code>, <code>aiagent_assistant</code>). This already flows to <code>AIConsumedEvent</code> and <code>AIRequestGotOverquotaEvent</code> via the metrics/quota pipeline. The proposal is to use the same <code>ai_feature</code> value as the <code>feature</code> discriminator on <em>all</em> AI events (Request, Response, ToolExecuted, etc.), so every event in BQ is filterable by feature.
+        <strong>Key insight: the feature value comes from the API request path.</strong> The v2 API routes use <code>/v2/feature/:feature</code> &mdash; e.g., <code>/v2/feature/builder/agent</code>. The path segment is extracted in the middleware and used as the canonical <code>feature</code> discriminator on <em>all</em> AI events (Request, Response, ToolExecuted, etc.), so every event in BQ is filterable by feature. This also flows to <code>AIConsumedEvent</code> and <code>AIRequestGotOverquotaEvent</code> via the metrics/quota pipeline.
       </div>
-      <p style="font-size:0.88rem;margin:0.75rem 0;"><strong>Backend:</strong> The feature name is already in the URL path (<code>/v2/feature/:feature</code>) and in the prompt config (<code>ai_feature</code>). Extract it in the middleware and pass through to <code>EventsService.send()</code>.</p>
-      <p style="font-size:0.88rem;margin:0.75rem 0;"><strong>Frontend:</strong> <code>useChatAgent</code> already receives <code>agentId</code> (e.g., <code>'aiagent/aiagent'</code>). The wrapper hook maps this to the canonical <code>ai_feature</code> value and passes it to <code>sendMetricEvent</code>.</p>
+      <p style="font-size:0.88rem;margin:0.75rem 0;"><strong>Backend:</strong> The feature name is the request path &mdash; <code>/v2/feature/builder/agent</code>, <code>/v2/feature/builder/agent-assistant</code>, etc. Extract it in the middleware and pass through to <code>EventsService.send()</code>.</p>
+      <p style="font-size:0.88rem;margin:0.75rem 0;"><strong>Frontend:</strong> Each wrapper hook passes the path-based feature identifier (e.g., <code>'builder/agent'</code>) to <code>useChatAgent</code>, which includes it in every <code>sendMetricEvent</code> call.</p>
       <p style="font-size:0.88rem;margin:0.75rem 0;">
         <strong>Complexity:</strong>
         <span class="complexity">
@@ -877,13 +877,15 @@
     <summary><span class="badge badge-backend">B</span> Replace <code>responseId</code> with <code>turnId</code> in v2</summary>
     <div class="content">
       <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:1rem;">
-        Generate a <code>turnId</code> per incoming request to restore per-turn correlation that <code>responseId</code> provided in v1.
+        The <code>turnId</code> is generated on the <strong>frontend</strong> when the user sends a message, then passed to the backend in the API request. The backend reads it and includes it in all events. This must be frontend-generated because a single user turn can trigger multiple backend API calls (backend tools &rarr; frontend tool &rarr; new backend call), and all must share the same <code>turnId</code>.
       </p>
-      <pre><span class="comment">// In agent-middleware-agents-sdk.ts</span>
+      <pre><span class="comment">// In useChatAgent hook — when user sends a message</span>
 <span class="kw">const</span> turnId = crypto.<span class="type">randomUUID</span>()
+<span class="comment">// Included in the API request body alongside the user message</span>
+<span class="field">body</span>: { <span class="field">message</span>, <span class="field">turnId</span>, ... }
 
-<span class="comment">// Passed to runAgent, used in all EventsService.send() calls</span>
-<span class="field">responseId</span>: turnId  <span class="comment">// reuse existing field name for backward compat</span></pre>
+<span class="comment">// Backend reads turnId from request, passes to all EventsService.send() calls</span>
+<span class="field">responseId</span>: req.body.<span class="field">turnId</span>  <span class="comment">// reuse existing field name for backward compat</span></pre>
 
       <p style="font-size:0.88rem;margin:0.75rem 0;">
         <strong>Complexity:</strong>
@@ -1005,26 +1007,26 @@
     <summary><span class="badge badge-backend">E</span> Flat, typed event schema &mdash; every field named and documented</summary>
     <div class="content">
       <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:1rem;">
-        Not all fields apply to all features. <code>mapId</code> is for map-bound features (Builder Agent, Agent Config Assistant), <code>mode</code> (testing/live) is agent-only, <code>workflowId</code> is for future workflow AI, etc. <strong>Every field must be explicitly named and typed</strong> so that anyone querying events in BigQuery or Segment knows exactly what columns exist and what they mean. The <code>feature</code> value should match the <code>ai_feature</code> declared in each prompt config file.
+        Not all fields apply to all features. <code>mapId</code> is for map-bound features (Builder Agent, Agent Config Assistant), <code>mode</code> (testing/live) is agent-only, <code>workflowId</code> is for future workflow AI, etc. <strong>Every field must be explicitly named and typed</strong> so that anyone querying events in BigQuery or Segment knows exactly what columns exist and what they mean. The <code>feature</code> value is derived from the API request path (e.g. <code>builder/agent</code>, <code>builder/agent-assistant</code>).
       </p>
 
       <h4 style="margin-top:1.25rem;">Single flat type &mdash; all fields explicit, feature-specific ones optional</h4>
       <pre><span class="kw">type</span> <span class="type">AIEventPayload</span> = {
   <span class="comment">// ── Always present on every AI event ──────────────────────</span>
-  <span class="field">feature</span>: <span class="type">string</span>           <span class="comment">// 'aiagent' | 'aiagent_assistant' | ... (matches ai_feature in prompt config)</span>
+  <span class="field">feature</span>: <span class="type">string</span>           <span class="comment">// 'builder/agent' | 'builder/agent-assistant' | ... (matches request path)</span>
   <span class="field">conversationId</span>: <span class="type">string</span>    <span class="comment">// session-level correlation</span>
   <span class="field">turnId</span>: <span class="type">string</span>            <span class="comment">// request-level correlation (replaces responseId)</span>
   <span class="field">accountId</span>?: <span class="type">string</span>        <span class="comment">// tenant</span>
 
   <span class="comment">// ── Resource context (null when not applicable) ──────────</span>
-  <span class="field">mapId</span>?: <span class="type">string</span>            <span class="comment">// which map — aiagent, aiagent_assistant</span>
-  <span class="field">agentId</span>?: <span class="type">string</span>          <span class="comment">// which agent config — aiagent only</span>
+  <span class="field">mapId</span>?: <span class="type">string</span>            <span class="comment">// which map — builder/agent, builder/agent-assistant</span>
+  <span class="field">agentId</span>?: <span class="type">string</span>          <span class="comment">// which agent config — builder/agent only</span>
   <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// which workflow — workflows-assistant</span>
   <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// which connection — do-assistant</span>
 
   <span class="comment">// ── Execution context ────────────────────────────────────</span>
   <span class="field">model</span>?: <span class="type">string</span>            <span class="comment">// which LLM was used</span>
-  <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span> <span class="comment">// aiagent only (has test/live toggle)</span>
+  <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span> <span class="comment">// builder/agent only (has test/live toggle)</span>
   <span class="field">isNewConversation</span>?: <span class="type">boolean</span> <span class="comment">// first turn in conversation</span>
 }</pre>
 
@@ -1040,7 +1042,7 @@
           </thead>
           <tbody>
             <tr><td><code>event_type</code></td><td><code>AIAgentRequest</code></td><td><code>AIAgentRequest</code></td><td><code>AIAgentRequest</code></td></tr>
-            <tr><td><code>feature</code></td><td><code>aiagent</code></td><td><code>aiagent_assistant</code></td><td><code>workflows-assistant</code></td></tr>
+            <tr><td><code>feature</code></td><td><code>builder/agent</code></td><td><code>builder/agent-assistant</code></td><td><code>workflows/assistant</code></td></tr>
             <tr><td><code>conversationId</code></td><td><code>conv-abc-123</code></td><td><code>conv-def-456</code></td><td><code>conv-ghi-789</code></td></tr>
             <tr><td><code>turnId</code></td><td><code>turn-001</code></td><td><code>turn-002</code></td><td><code>turn-003</code></td></tr>
             <tr><td><code>accountId</code></td><td><code>acc-xyz</code></td><td><code>acc-xyz</code></td><td><code>acc-xyz</code></td></tr>
@@ -1059,7 +1061,7 @@
       <pre><span class="comment">-- "How many agent conversations per map, in live mode only?"</span>
 <span class="kw">SELECT</span> <span class="field">mapId</span>, <span class="type">COUNT</span>(<span class="kw">DISTINCT</span> <span class="field">conversationId</span>) <span class="kw">AS</span> conversations
 <span class="kw">FROM</span> ai_events
-<span class="kw">WHERE</span> <span class="field">feature</span> = <span class="str">'aiagent'</span> <span class="kw">AND</span> <span class="field">mode</span> = <span class="str">'live'</span>
+<span class="kw">WHERE</span> <span class="field">feature</span> = <span class="str">'builder/agent'</span> <span class="kw">AND</span> <span class="field">mode</span> = <span class="str">'live'</span>
 <span class="kw">GROUP BY</span> <span class="field">mapId</span>
 
 <span class="comment">-- "Tool success rate per feature"</span>
@@ -1076,9 +1078,13 @@
 <span class="kw">ORDER BY</span> <span class="field">timestamp</span></pre>
 
       <p style="font-size:0.88rem;margin:1rem 0 0.5rem 0;"><strong>How it flows in the backend:</strong></p>
-      <div class="flow" style="font-size:0.75rem;"><span class="highlight">v2 middleware</span> receives request
-  → extracts <span class="green">feature</span> from URL path (<span class="str">/v2/feature/:feature</span>)
+      <div class="flow" style="font-size:0.75rem;"><span class="highlight">Frontend</span> user sends message
   → generates <span class="green">turnId</span> = crypto.randomUUID()
+  → sends API request with <span class="green">turnId</span> in body
+
+<span class="highlight">v2 middleware</span> receives request
+  → extracts <span class="green">feature</span> from URL path (<span class="str">/v2/feature/:feature</span>)
+  → reads <span class="green">turnId</span> from request body (frontend-generated)
   → populates named fields from request: <span class="amber">mapId</span>, <span class="amber">agentId</span>, <span class="amber">mode</span>, etc.
   → fields not applicable to this feature are simply omitted (null in BQ)
   → constructs <span class="highlight">AIEventPayload</span> and passes to <span class="highlight">runAgent()</span>
@@ -1088,7 +1094,7 @@
       <div class="table-wrapper">
         <table>
           <thead>
-            <tr><th>Field</th><th>Type</th><th>aiagent</th><th>aiagent_assistant</th><th>workflows-assistant</th><th>do-assistant</th><th>Description</th></tr>
+            <tr><th>Field</th><th>Type</th><th>builder/agent</th><th>builder/agent-assistant</th><th>workflows/assistant</th><th>do/assistant</th><th>Description</th></tr>
           </thead>
           <tbody>
             <tr><td><code>feature</code></td><td><code>string</code></td><td>Always</td><td>Always</td><td>Always</td><td>Always</td><td>Which AI product generated this event</td></tr>
@@ -1271,17 +1277,17 @@
         <tbody>
           <tr>
             <td><code>AIAgentAssistantConversationStarted</code></td>
-            <td><code>AIConversationStarted</code> + <code>feature: 'aiagent_assistant'</code></td>
+            <td><code>AIConversationStarted</code> + <code>feature: 'builder/agent-assistant'</code></td>
             <td>Generic &mdash; same lifecycle event for any AI feature</td>
           </tr>
           <tr>
             <td><code>AIAgentAssistantConversationDeleted</code></td>
-            <td><code>AIConversationDeleted</code> + <code>feature: 'aiagent_assistant'</code></td>
+            <td><code>AIConversationDeleted</code> + <code>feature: 'builder/agent-assistant'</code></td>
             <td>Generic &mdash; same lifecycle event for any AI feature</td>
           </tr>
           <tr>
             <td><code>AIAgentAssistantModelChanged</code></td>
-            <td><code>AIModelChanged</code> + <code>feature: 'aiagent_assistant'</code></td>
+            <td><code>AIModelChanged</code> + <code>feature: 'builder/agent-assistant'</code></td>
             <td>Generic &mdash; model switching applies to any feature with a model selector</td>
           </tr>
           <tr>
@@ -1302,19 +1308,19 @@
         </tbody>
       </table>
     </div>
-    <p style="color:var(--text-muted);font-size:0.82rem;margin-top:0.5rem;">Key benefit: with generic names + <code>feature</code> field, adding a new AI feature (e.g., Workflows Assistant) requires zero new event types. Just pass <code>feature: 'workflows-assistant'</code> and all events work. BQ queries use <code>WHERE feature = 'aiagent_assistant'</code> to isolate any feature.</p>
+    <p style="color:var(--text-muted);font-size:0.82rem;margin-top:0.5rem;">Key benefit: with generic names + <code>feature</code> field, adding a new AI feature (e.g., Workflows Assistant) requires zero new event types. Just pass <code>feature: 'workflows/assistant'</code> and all events work. BQ queries use <code>WHERE feature = 'builder/agent-assistant'</code> to isolate any feature.</p>
   </div>
 
   <!-- 5.2 feature constant mapping + context type -->
   <h3>5.2 &nbsp; Define canonical <code>feature</code> values + <code>AIFeatureContext</code></h3>
   <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:0.5rem;"><strong>New file:</strong> <code>workspace-www/src/features/agents/constants.ts</code> (or add to existing types)</p>
 
-  <pre><span class="comment">// Canonical feature identifiers — must match ai_feature in prompt config</span>
+  <pre><span class="comment">// Canonical feature identifiers — derived from API request path</span>
 <span class="kw">export const</span> <span class="type">AIFeature</span> = {
-  <span class="field">AGENT</span>: <span class="str">'aiagent'</span>,                       <span class="comment">// Builder Agent (ai_feature in aiagent.prompt)</span>
-  <span class="field">AGENT_ASSISTANT</span>: <span class="str">'aiagent_assistant'</span>,  <span class="comment">// Agent Config Assistant (ai_feature in aiagent_assistant.prompt)</span>
-  <span class="field">WORKFLOWS_ASSISTANT</span>: <span class="str">'workflows-assistant'</span>,  <span class="comment">// Future</span>
-  <span class="field">DO_ASSISTANT</span>: <span class="str">'do-assistant'</span>,            <span class="comment">// Future</span>
+  <span class="field">BUILDER_AGENT</span>: <span class="str">'builder/agent'</span>,                    <span class="comment">// Builder Agent (/v2/feature/builder/agent)</span>
+  <span class="field">BUILDER_AGENT_ASSISTANT</span>: <span class="str">'builder/agent-assistant'</span>,  <span class="comment">// Agent Config Assistant</span>
+  <span class="field">WORKFLOWS_ASSISTANT</span>: <span class="str">'workflows/assistant'</span>,          <span class="comment">// Future</span>
+  <span class="field">DO_ASSISTANT</span>: <span class="str">'do/assistant'</span>,                      <span class="comment">// Future</span>
 } <span class="kw">as const</span>
 
 <span class="kw">type</span> <span class="type">AIFeatureType</span> = <span class="kw">typeof</span> <span class="type">AIFeature</span>[<span class="kw">keyof typeof</span> <span class="type">AIFeature</span>]
@@ -1322,13 +1328,13 @@
 <span class="comment">// Typed resource context — every field explicitly named</span>
 <span class="comment">// useChatAgent accepts this and includes populated fields in every event</span>
 <span class="kw">type</span> <span class="type">AIResourceContext</span> = {
-  <span class="field">mapId</span>?: <span class="type">string</span>            <span class="comment">// aiagent, aiagent_assistant</span>
-  <span class="field">agentId</span>?: <span class="type">string</span>          <span class="comment">// aiagent only</span>
-  <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span> <span class="comment">// aiagent only</span>
+  <span class="field">mapId</span>?: <span class="type">string</span>            <span class="comment">// builder/agent, builder/agent-assistant</span>
+  <span class="field">agentId</span>?: <span class="type">string</span>          <span class="comment">// builder/agent only</span>
+  <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span> <span class="comment">// builder/agent only</span>
   <span class="field">model</span>?: <span class="type">string</span>            <span class="comment">// current model name (e.g. 'gemini-2.5-pro')</span>
   <span class="field">provider</span>?: <span class="type">ProviderName</span>   <span class="comment">// model provider: 'vertex' | 'openai' | 'bedrock' | 'snowflake' | ...</span>
-  <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// do-assistant</span>
-  <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// workflows-assistant</span>
+  <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// do/assistant</span>
+  <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// workflows/assistant</span>
 }
 
 <span class="comment">// ProviderName — already defined in workspace-api/providers/constants.ts</span>
@@ -1337,7 +1343,7 @@
   <p style="color:var(--text-muted);font-size:0.85rem;margin-top:1rem;margin-bottom:0.5rem;"><strong>How each wrapper passes its fields:</strong></p>
   <pre><span class="comment">// useBuilderChatAgent — Builder Agent: map-bound, has testing mode</span>
 <span class="type">useChatAgent</span>({
-  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">AGENT</span>,
+  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">BUILDER_AGENT</span>,
   <span class="field">mapId</span>: <span class="str">'map-abc'</span>,
   <span class="field">agentId</span>: <span class="str">'agent-xyz'</span>,
   <span class="field">mode</span>: <span class="str">'live'</span>
@@ -1345,7 +1351,7 @@
 
 <span class="comment">// useBuilderAssistantChatAgent — Agent Config Assistant: map-bound, no testing mode</span>
 <span class="type">useChatAgent</span>({
-  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">AGENT_ASSISTANT</span>,
+  <span class="field">feature</span>: <span class="type">AIFeature</span>.<span class="field">BUILDER_AGENT_ASSISTANT</span>,
   <span class="field">mapId</span>: <span class="str">'map-abc'</span>
 })
 
@@ -1365,7 +1371,7 @@
   <pre><span class="comment">// Builder Agent sends a message → Segment receives:</span>
 {
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
-  <span class="field">feature</span>: <span class="str">"aiagent"</span>,
+  <span class="field">feature</span>: <span class="str">"builder/agent"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-abc-123"</span>,
   <span class="field">model</span>: <span class="str">"gemini-2.5-pro"</span>,
   <span class="field">provider</span>: <span class="str">"vertex"</span>,
@@ -1377,7 +1383,7 @@
 <span class="comment">// Agent Config Assistant sends a message → Segment receives:</span>
 {
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
-  <span class="field">feature</span>: <span class="str">"aiagent_assistant"</span>,
+  <span class="field">feature</span>: <span class="str">"builder/agent-assistant"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-def-456"</span>,
   <span class="field">model</span>: <span class="str">"claude-sonnet-4-20250514"</span>,
   <span class="field">provider</span>: <span class="str">"anthropic"</span>,
@@ -1388,7 +1394,7 @@
 <span class="comment">// Customer using their own Bedrock setup → Segment receives:</span>
 {
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
-  <span class="field">feature</span>: <span class="str">"aiagent"</span>,
+  <span class="field">feature</span>: <span class="str">"builder/agent"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-xyz-999"</span>,
   <span class="field">model</span>: <span class="str">"anthropic.claude-opus-4-5-20250929"</span>,
   <span class="field">provider</span>: <span class="str">"bedrock"</span>,
@@ -1400,7 +1406,7 @@
 <span class="comment">// Future Workflows Assistant → Segment receives:</span>
 {
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
-  <span class="field">feature</span>: <span class="str">"workflows-assistant"</span>,
+  <span class="field">feature</span>: <span class="str">"workflows/assistant"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-ghi-789"</span>,
   <span class="field">model</span>: <span class="str">"gpt-4o"</span>,
   <span class="field">provider</span>: <span class="str">"openai"</span>,
@@ -1540,12 +1546,12 @@
         <tr>
           <td><code>AgentDialogContainer.tsx</code></td>
           <td><code>AIAgentCreated</code>, <code>AIAgentConfigurationChanged</code></td>
-          <td><span class="badge badge-warn">Add feature</span> &mdash; add <code>feature: 'aiagent'</code> to payload</td>
+          <td><span class="badge badge-warn">Add feature</span> &mdash; add <code>feature: 'builder/agent'</code> to payload</td>
         </tr>
         <tr>
           <td><code>DeleteAgentConfigurationDialog.tsx</code></td>
           <td><code>AIAgentDeleted</code></td>
-          <td><span class="badge badge-warn">Add feature</span> &mdash; add <code>feature: 'aiagent'</code> to payload</td>
+          <td><span class="badge badge-warn">Add feature</span> &mdash; add <code>feature: 'builder/agent'</code> to payload</td>
         </tr>
       </tbody>
     </table>
@@ -1559,7 +1565,7 @@
     <h4>What changes</h4>
     <p>The shared <code>ChatContext</code> provider should include <code>feature</code> and resource context fields in its value. Child components can call <code>useChatContext()</code> to get the feature name and resource IDs (<code>mapId</code>, <code>agentId</code>, etc.) without prop drilling.</p>
     <pre><span class="kw">type</span> <span class="type">ChatContextValue</span> = {
-  <span class="field">feature</span>: <span class="type">AIFeatureType</span>         <span class="comment">// NEW -- 'aiagent' | 'aiagent_assistant' | ...</span>
+  <span class="field">feature</span>: <span class="type">AIFeatureType</span>         <span class="comment">// NEW -- 'builder/agent' | 'builder/agent-assistant' | ...</span>
   <span class="field">mapId</span>?: <span class="type">string</span>                 <span class="comment">// NEW -- from AIResourceContext</span>
   <span class="field">agentId</span>?: <span class="type">string</span>               <span class="comment">// NEW -- from AIResourceContext</span>
   <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span>      <span class="comment">// NEW -- from AIResourceContext</span>
@@ -1683,10 +1689,10 @@ Every new AI feature must re-implement tracking</div>
   <span class="green">ChatHeader</span>    fires ConversationDel. + { <span class="highlight">feature</span>, ... }
 
 <span class="green">Every field is a named, typed column in BQ/Segment:</span>
-  aiagent:           <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">agentId</span> + <span class="amber">mode</span> + <span class="amber">model</span> + <span class="amber">provider</span>
-  aiagent_assistant: <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
-  workflows-assistant: <span class="highlight">feature</span> + <span class="amber">workflowId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
-  do-assistant:      <span class="highlight">feature</span> + <span class="amber">connectionId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  builder/agent:           <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">agentId</span> + <span class="amber">mode</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  builder/agent-assistant: <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  workflows/assistant: <span class="highlight">feature</span> + <span class="amber">workflowId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  do/assistant:        <span class="highlight">feature</span> + <span class="amber">connectionId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
 
 SELECT feature, provider, model FROM ai_events  <span class="green">← just works</span>
 WHERE provider = 'bedrock'                       <span class="green">← no string parsing</span></div>
@@ -1761,13 +1767,13 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
           </tr>
           <tr class="priority-should">
             <td><span class="badge badge-warn">Should</span></td>
-            <td>Wire the feedback handler &mdash; <code>onRating: () =&gt; void 0</code> is currently a no-op. Should fire <code>AIAgentFeedback</code> with <code>feature: 'aiagent_assistant'</code>. Without this, we have zero signal on response quality for the assistant.</td>
+            <td>Wire the feedback handler &mdash; <code>onRating: () =&gt; void 0</code> is currently a no-op. Should fire <code>AIAgentFeedback</code> with <code>feature: 'builder/agent-assistant'</code>. Without this, we have zero signal on response quality for the assistant.</td>
             <td><code>agents/ui/AgentChatConversation.tsx</code></td>
             <td><span class="complexity"><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
           </tr>
           <tr class="priority-should">
             <td><span class="badge badge-warn">Should</span></td>
-            <td>Ensure <code>reset()</code> (delete conversation in context menu) fires <code>AIConversationDeleted</code> with <code>feature: 'aiagent_assistant'</code>. Currently <code>reset()</code> clears state but no event is fired.</td>
+            <td>Ensure <code>reset()</code> (delete conversation in context menu) fires <code>AIConversationDeleted</code> with <code>feature: 'builder/agent-assistant'</code>. Currently <code>reset()</code> clears state but no event is fired.</td>
             <td><code>builder/ui/agent/dialog/assistant/AgentAssistantContainer.tsx</code></td>
             <td><span class="complexity"><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
           </tr>
@@ -1775,7 +1781,7 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
       </table>
     </div>
     <div class="recommendation" style="margin-top:0.75rem;">
-      <strong>Outcome:</strong> Agent Config Assistant ships using v1 backend but with <code>feature: 'aiagent_assistant'</code> + <code>mapId</code> on all frontend events. The shared hook architecture is in place for subsequent phases. Backend events still use v1 (Responses API). New events (<code>AIToolResultExpanded</code>/<code>Collapsed</code>, <code>AIModelChanged</code>) provide visibility into how users interact with tool outputs and model selection.
+      <strong>Outcome:</strong> Agent Config Assistant ships using v1 backend but with <code>feature: 'builder/agent-assistant'</code> + <code>mapId</code> on all frontend events. The shared hook architecture is in place for subsequent phases. Backend events still use v1 (Responses API). New events (<code>AIToolResultExpanded</code>/<code>Collapsed</code>, <code>AIModelChanged</code>) provide visibility into how users interact with tool outputs and model selection.
     </div>
     <div class="callout" style="margin-top:0.5rem;">
       <strong>Events at this point:</strong> Frontend events include <code>feature</code> + <code>mapId</code>. Backend events are v1 (no <code>feature</code>, no <code>turnId</code> yet). That's okay &mdash; backend events get upgraded in Phase 2.
@@ -1789,7 +1795,7 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
       PR #23685 &mdash; Backend Chat Completion + Agent Config Assistant v2 upgrade
       <a class="pr-link" href="https://github.com/CartoDB/cloud-native/pull/23685" target="_blank" style="margin:0;font-size:0.75rem;">PR #23685</a>
     </h4>
-    <p>Backend migrates from Responses API to Chat Completions (Agents SDK). Once merged, the Agent Config Assistant frontend updates its API calls to use v2. This is where backend events get <code>turnId</code> + <code>feature</code> (derived from <code>ai_feature</code> in prompt config).</p>
+    <p>Backend migrates from Responses API to Chat Completions (Agents SDK). Once merged, the Agent Config Assistant frontend updates its API calls to use v2. This is where backend events get <code>turnId</code> (frontend-generated) + <code>feature</code> (from request path).</p>
     <div class="table-wrapper" style="margin-top:0.5rem;">
       <table>
         <thead>
@@ -1798,8 +1804,8 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
         <tbody>
           <tr class="priority-must">
             <td><span class="badge badge-breaking">Must</span></td>
-            <td>Generate <code>turnId = crypto.randomUUID()</code> per request in v2 middleware. Pass to <code>runAgent</code>, use as <code>responseId</code> in all <code>EventsService.send()</code> calls. Restores per-turn correlation.</td>
-            <td><code>agent-middleware-agents-sdk.ts</code><br><code>agent-runner.ts</code></td>
+            <td>Accept <code>turnId</code> from frontend in API request body. Frontend generates <code>turnId = crypto.randomUUID()</code> per user message. Backend reads it and uses as <code>responseId</code> in all <code>EventsService.send()</code> calls. Must be frontend-generated because a single user turn can trigger multiple backend calls (backend tools &rarr; frontend tool &rarr; new backend call).</td>
+            <td><code>useChatAgent</code> (FE)<br><code>agent-middleware-agents-sdk.ts</code><br><code>agent-runner.ts</code></td>
             <td><span class="complexity"><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
           </tr>
           <tr class="priority-must">
@@ -1841,7 +1847,7 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
       </table>
     </div>
     <div class="recommendation" style="margin-top:0.75rem;">
-      <strong>Outcome:</strong> Backend events now include <code>feature</code> + <code>turnId</code> + <code>provider</code> + typed resource fields. Assistant frontend uses v2 API. Both frontend and backend events are aligned for the assistant. BQ queries like <code>SELECT feature, provider, model, mapId, turnId FROM ai_events WHERE provider = 'bedrock'</code> work.
+      <strong>Outcome:</strong> Backend events now include <code>feature</code> + <code>turnId</code> (frontend-generated) + <code>provider</code> + typed resource fields. Assistant frontend uses v2 API. Both frontend and backend events are aligned for the assistant. BQ queries like <code>SELECT feature, provider, model, mapId, turnId FROM ai_events WHERE provider = 'bedrock'</code> work.
     </div>
   </div>
 
@@ -1893,7 +1899,7 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
       </table>
     </div>
     <div class="recommendation" style="margin-top:0.75rem;">
-      <strong>Outcome:</strong> All AI features (Builder Agent + Agent Config Assistant) use the shared hook, v2 API, shared chat components, and fire events through one unified system. Every event has <code>feature</code> (matching <code>ai_feature</code> from prompt config) + <code>model</code> + <code>provider</code> + typed resource fields (<code>mapId</code>, <code>agentId</code>, <code>mode</code>). Every field is a named BQ column. Future AI features plugging into <code>useChatAgent</code> get tracking automatically.
+      <strong>Outcome:</strong> All AI features (Builder Agent + Agent Config Assistant) use the shared hook, v2 API, shared chat components, and fire events through one unified system. Every event has <code>feature</code> (matching the request path) + <code>model</code> + <code>provider</code> + <code>turnId</code> (frontend-generated) + typed resource fields (<code>mapId</code>, <code>agentId</code>, <code>mode</code>). Every field is a named BQ column. Future AI features plugging into <code>useChatAgent</code> get tracking automatically.
     </div>
   </div>
 
@@ -1901,12 +1907,12 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
   <h3 style="margin-top:2rem;">Dependency Chain</h3>
   <div class="flow"><span class="highlight">Phase 1: PR #23767</span> (Agent Config Assistant ships on v1 backend + latest useChatAgent hook)
   <span class="green">Ships first</span> — establishes shared hook architecture
-  <span class="amber">Must add:</span> feature (= ai_feature from prompt) + AIResourceContext fields in useChatAgent
-  <span class="green">Events:</span> FE has feature='aiagent_assistant' + mapId; BE still v1 (no feature/turnId yet)
+  <span class="amber">Must add:</span> feature (= request path) + AIResourceContext fields in useChatAgent
+  <span class="green">Events:</span> FE has feature='builder/agent-assistant' + mapId; BE still v1 (no feature/turnId yet)
         |
         v
 <span class="highlight">Phase 2: PR #23685</span> (Backend → Chat Completion) + Agent Config Assistant FE → v2 API
-  <span class="amber">Must add:</span> turnId + feature (from ai_feature) + provider (from ModelInfo) + typed resource fields in backend events
+  <span class="amber">Must add:</span> turnId (from frontend) + feature (from request path) + provider (from ModelInfo) + typed resource fields in backend events
   <span class="amber">Then:</span> update useChatAgent hook for v2 contract (callId, no parent)
   <span class="green">Events:</span> BE + FE aligned. BQ has feature, provider, model, turnId, mapId columns
         |
@@ -1918,7 +1924,7 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
   <span class="green">Events:</span> fully unified — all features, all fields, all named columns</div>
 
   <div class="callout" style="margin-top:1.5rem;">
-    <strong>Meeting action items:</strong> (1) Confirm PR #23767 (Agent Config Assistant) ships first with <code>feature: 'aiagent_assistant'</code> + <code>mapId</code> wired into <code>useChatAgent</code>. (2) Confirm <code>ai_feature</code> from prompt config is the source of truth for the <code>feature</code> field on all events. (3) Agree on <code>turnId</code> + <code>feature</code> + <code>provider</code> (from <code>ModelInfo.provider</code>) + typed resource fields as requirements for PR #23685. (4) Scope PR #23698 to include: Builder Agent &rarr; shared hook, ChatContext update, event deduplication, optional <code>AIAgent*</code> &rarr; <code>AI*</code> rename. (5) Confirm <code>provider</code> is an explicit named field on all events that carry <code>model</code> &mdash; no parsing of <code>::</code> separators in BQ.
+    <strong>Meeting action items:</strong> (1) Confirm PR #23767 (Agent Config Assistant) ships first with <code>feature: 'builder/agent-assistant'</code> + <code>mapId</code> wired into <code>useChatAgent</code>. (2) Confirm the API request path is the source of truth for the <code>feature</code> field on all events (e.g. <code>builder/agent</code>, <code>builder/agent-assistant</code>). (3) Agree on <code>turnId</code> (frontend-generated) + <code>feature</code> + <code>provider</code> (from <code>ModelInfo.provider</code>) + typed resource fields as requirements for PR #23685. (4) Scope PR #23698 to include: Builder Agent &rarr; shared hook, ChatContext update, event deduplication, optional <code>AIAgent*</code> &rarr; <code>AI*</code> rename. (5) Confirm <code>provider</code> is an explicit named field on all events that carry <code>model</code> &mdash; no parsing of <code>::</code> separators in BQ.
   </div>
 </section>
 
