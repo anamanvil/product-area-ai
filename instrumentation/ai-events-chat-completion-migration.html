@@ -382,6 +382,7 @@
 <!-- Sticky TOC -->
 <nav class="toc">
   <h4>Contents</h4>
+  <a href="#product-rationale" style="color:var(--amber);font-weight:600;">Product Rationale &amp; Discussion Guide</a>
   <a href="#current-state">1. Current Event Inventory</a>
   <a href="#issues">2. Issues from v1 &rarr; v2</a>
   <a href="#structural">3. Structural Problem</a>
@@ -417,6 +418,125 @@
     <span class="meta-tag">27 files changed</span>
   </div>
 </header>
+
+<!-- Product Rationale & Discussion Guide -->
+<section id="product-rationale" style="border:2px solid var(--amber);border-radius:12px;padding:1.5rem;margin-bottom:2rem;background:rgba(245,158,11,0.04);">
+  <h2 style="color:var(--amber);margin-top:0;"><span class="num" style="background:var(--amber);">!</span> Why This Matters &amp; What We Need to Align On</h2>
+
+  <p style="margin-bottom:1.25rem;">We're migrating the AI backend from OpenAI's Responses API to Chat Completions (Agents SDK). This is the right moment to fix our instrumentation before we ship more AI features. If we don't do this now, we accumulate technical debt that makes it harder to answer basic product questions.</p>
+
+  <h3 style="color:var(--text);margin-bottom:0.75rem;">What we can't answer today</h3>
+  <div class="table-wrapper" style="margin-bottom:1.25rem;">
+    <table>
+      <thead>
+        <tr><th>Product Question</th><th>Why we can't answer it</th><th>What fixes it</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>"Which LLM provider are customers actually using?"</td>
+          <td>Events only carry the model string (<code>carto::gemini-2.5-pro</code>). Provider requires parsing <code>::</code> separators in BQ.</td>
+          <td>Add explicit <code>provider</code> field &rarr; <code>WHERE provider = 'bedrock'</code></td>
+        </tr>
+        <tr>
+          <td>"How does the Agent Config Assistant perform vs the Builder Agent?"</td>
+          <td>All events are <code>AIAgent*</code> &mdash; no way to distinguish which AI feature fired them.</td>
+          <td>Add <code>feature</code> field (= <code>ai_feature</code> from prompt config)</td>
+        </tr>
+        <tr>
+          <td>"In a multi-turn conversation, which specific user message caused an error?"</td>
+          <td>v2 drops <code>responseId</code> (Responses API concept). All events in a conversation share only <code>conversationId</code>.</td>
+          <td>Add <code>turnId</code> &mdash; a UUID generated per user message in the v2 middleware</td>
+        </tr>
+        <tr>
+          <td>"Do users actually look at tool outputs, or do they ignore them?"</td>
+          <td>No event for expanding/collapsing tool result accordions in the chat UI.</td>
+          <td>Add <code>AIToolResultExpanded</code> / <code>AIToolResultCollapsed</code></td>
+        </tr>
+        <tr>
+          <td>"How often do users switch models mid-conversation, and to which provider?"</td>
+          <td>No event for model changes. No provider tracking.</td>
+          <td>Add <code>AIModelChanged</code> with <code>previousModel</code>, <code>newModel</code>, <code>previousProvider</code>, <code>newProvider</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="color:var(--text);margin-bottom:0.75rem;">Key decisions for alignment</h3>
+
+  <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
+    <h4>1. Should we rename events from <code>AIAgent*</code> to <code>AI*</code> + <code>feature</code>?</h4>
+    <p style="margin-bottom:0.5rem;"><strong>The benefit:</strong> Any new AI feature (SQL Assistant, Workflow AI, etc.) gets all chat events for free &mdash; just pass <code>feature: 'sql-assistant'</code> to <code>useChatAgent</code>. Zero new event types to create, zero new dashboards to build. One <code>WHERE feature = '...'</code> in BQ isolates any feature.</p>
+    <p style="margin-bottom:0.5rem;"><strong>The cost:</strong> Renaming means updating existing BQ dashboards and Segment destinations. Old event names need a transition period (fire both old + new). This is real work.</p>
+    <p><strong>Question for the team:</strong> Do we rename now (Phase 3) or keep <code>AIAgent*</code> names and add <code>feature</code> as an additional field without renaming? Both approaches give us the <code>feature</code> dimension &mdash; renaming is cleaner long-term but more disruptive short-term.</p>
+  </div>
+
+  <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
+    <h4>2. Is <code>turnId</code> worth the effort?</h4>
+    <p style="margin-bottom:0.5rem;"><strong>The problem:</strong> In v2, a single user message can trigger multiple internal LLM calls (tool use loops). Without <code>turnId</code>, we can't correlate which Request, ToolInvoked, ToolExecuted, Response, and Error events belong to the same user message.</p>
+    <p style="margin-bottom:0.5rem;"><strong>The implementation:</strong> One line: <code>const turnId = crypto.randomUUID()</code> in the v2 middleware, passed through to all events. Minimal effort.</p>
+    <p><strong>Question for the team:</strong> Do we need per-turn correlation for debugging and analytics, or is <code>conversationId</code> granularity enough? If we're building dashboards that show "tool execution success rate per user message" or "which messages cause errors", we need <code>turnId</code>.</p>
+  </div>
+
+  <div class="issue-card" style="border-left:3px solid var(--amber);margin-bottom:1rem;">
+    <h4>3. "Events for free" via shared hook &mdash; what does this actually mean?</h4>
+    <p style="margin-bottom:0.5rem;">Today, every AI feature must manually wire its own event firing (Builder Agent does it across 6 files). The <code>useChatAgent</code> shared hook centralizes this: <code>ConversationStarted</code>, <code>ResponseStopped</code>, <code>ToolExecuted</code> fire automatically for any feature that uses the hook.</p>
+    <p style="margin-bottom:0.5rem;"><strong>What "for free" means concretely:</strong></p>
+    <ul style="margin:0;padding-left:1.5rem;color:var(--text-muted);font-size:0.88rem;">
+      <li>Agent Config Assistant (PR #23767): zero manual event code &mdash; hook handles everything</li>
+      <li>Future SQL Assistant: just call <code>useChatAgent({ feature: 'sql-assistant', connectionId })</code> and all events are tracked</li>
+      <li>No risk of forgetting to add tracking when shipping a new AI feature</li>
+    </ul>
+    <p style="margin-top:0.5rem;"><strong>Question for the team:</strong> Are we aligned that <code>useChatAgent</code> is the single source of truth for chat event firing? This means removing duplicate event calls from <code>genAiHooks.ts</code>, <code>BuilderAIChat.tsx</code>, etc. in Phase 3.</p>
+  </div>
+
+  <div class="issue-card" style="border-left:3px solid var(--green);margin-bottom:0;">
+    <h4>4. What's already done vs what needs work</h4>
+    <div class="table-wrapper" style="margin-top:0.5rem;margin-bottom:0;">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Status</th><th>Where</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>isNewConversation</code></td>
+            <td><span class="badge badge-new">Already in PR #23685</span></td>
+            <td>v2 middleware: <code>!requestConversationId</code> &rarr; events + prompt conditionals</td>
+          </tr>
+          <tr>
+            <td><code>feature</code> (= <code>ai_feature</code>)</td>
+            <td><span class="badge badge-warn">Exists in prompt config + quota events</span></td>
+            <td>Needs extending to all AI events (backend + frontend)</td>
+          </tr>
+          <tr>
+            <td><code>provider</code></td>
+            <td><span class="badge badge-breaking">New &mdash; Must</span></td>
+            <td>Available from <code>ModelInfo.provider</code>, needs adding to events</td>
+          </tr>
+          <tr>
+            <td><code>turnId</code></td>
+            <td><span class="badge badge-breaking">New &mdash; Must</span></td>
+            <td>One-liner in v2 middleware, replaces lost <code>previousResponseId</code> correlation</td>
+          </tr>
+          <tr>
+            <td>Event rename (<code>AIAgent*</code> &rarr; <code>AI*</code>)</td>
+            <td><span class="badge badge-warn">Decision needed</span></td>
+            <td>Clean long-term, but requires dashboard updates</td>
+          </tr>
+          <tr>
+            <td><code>AIToolResultExpanded/Collapsed</code></td>
+            <td><span class="badge badge-breaking">New &mdash; Must</span></td>
+            <td>Frontend only &mdash; fire on accordion toggle in chat UI</td>
+          </tr>
+          <tr>
+            <td><code>AIModelChanged</code></td>
+            <td><span class="badge badge-breaking">New &mdash; Must</span></td>
+            <td>Frontend only &mdash; fire on model selector change</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
 <!-- Section 1: Current State -->
 <section id="current-state">
