@@ -2016,6 +2016,56 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
           </tbody>
         </table>
       </div>
+
+      <h3 style="margin-top:1.5rem;">Epic: <a href="https://app.shortcut.com/cartoteam/epic/543234" style="color:var(--accent);">Unified AI Events</a></h3>
+      <p style="margin:0.5rem 0;color:var(--text-muted);font-size:0.9rem;">These stories integrate events into the shared hook and must only merge as part of the AI Agent Chat Completion hook and component integration &mdash; where Agents introduce the new components, hook, traces, and unified events. Before merging, sync with Victor Folque to ensure BQ dashboard queries are ready.</p>
+      <div class="table-wrapper" style="margin-top:0.75rem;">
+        <table>
+          <thead><tr><th>Story</th><th>Name</th><th>Scope</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543330" style="color:var(--accent);"><code>sc-543330</code></a></td>
+              <td>Rename builder/assistant prompt to builder/agent-config-assistant</td>
+              <td>Backend (prompt)</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543250" style="color:var(--accent);"><code>sc-543250</code></a></td>
+              <td>Add frontend-generated turnId to AI API requests</td>
+              <td>Frontend + Backend</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543251" style="color:var(--accent);"><code>sc-543251</code></a></td>
+              <td>Add provider field to all AI events</td>
+              <td>Backend only</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543379" style="color:var(--accent);"><code>sc-543379</code></a></td>
+              <td>Consolidate AI event firing into shared useChatAgent hook</td>
+              <td>Frontend</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543417" style="color:var(--accent);"><code>sc-543417</code></a></td>
+              <td>Add AIToolResultExpanded/Collapsed frontend events</td>
+              <td>Frontend (new event)</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543418" style="color:var(--accent);"><code>sc-543418</code></a></td>
+              <td>Add AIModelChanged frontend event</td>
+              <td>Frontend (new event)</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543252" style="color:var(--accent);"><code>sc-543252</code></a></td>
+              <td>Unify AI events: rename AIAgent* &rarr; AI* (frontend)</td>
+              <td>Frontend</td>
+            </tr>
+            <tr>
+              <td><a href="https://app.shortcut.com/cartoteam/story/543253" style="color:var(--accent);"><code>sc-543253</code></a></td>
+              <td>Unify AI events: rename AIAgent* &rarr; AI* (backend)</td>
+              <td>Backend</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </details>
 </section>
