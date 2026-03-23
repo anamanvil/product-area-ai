@@ -445,7 +445,7 @@
           <td><code>agent-streaming-middleware.ts</code></td>
           <td class="arrow">&rarr;</td>
           <td><code>agent-middleware-agents-sdk.ts</code></td>
-          <td><code>mapId, conversationId, model, mode, accountId</code><br><span class="badge badge-breaking">+ provider (Must)</span> <span class="badge badge-warn">+ isNewConversation (Should)</span></td>
+          <td><code>mapId, conversationId, model, mode, accountId, previousResponseId</code><br><span class="badge badge-breaking">+ provider (Must &mdash; new)</span><br><span style="color:var(--text-muted);font-size:0.78rem;">Note: new vs follow-up already derivable from <code>previousResponseId</code> (null = first message)</span></td>
         </tr>
         <tr>
           <td><code>AIAgentResponse</code></td>
@@ -1647,12 +1647,6 @@ WHERE provider = 'bedrock'                       <span class="green">← no stri
             <td>Add <code>feature</code> + <code>provider</code> fields to backend events. Extract <code>feature</code> from URL path (<code>/v2/feature/:feature</code>); extract <code>provider</code> from <code>ModelInfo.provider</code> (already resolved by <code>ModelsService</code>). Include both in all events. Also add typed resource fields: <code>mapId</code>, <code>agentId</code>, <code>mode</code> as named optional columns (see Proposal E schema).</td>
             <td><code>events-service.ts</code><br><code>agent-middleware-agents-sdk.ts</code><br><code>commons/.../event-types.ts</code></td>
             <td><span class="complexity"><span class="dot filled"></span><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
-          </tr>
-          <tr class="priority-should">
-            <td><span class="badge badge-warn">Should</span></td>
-            <td>Verify <code>isNewConversation</code> propagates through event factory to PubSub payload and BQ schema.</td>
-            <td><code>commons/.../ai-events.ts</code></td>
-            <td><span class="complexity"><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
           </tr>
           <tr class="priority-should">
             <td><span class="badge badge-warn">Should</span></td>
