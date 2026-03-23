@@ -445,7 +445,7 @@
           <td><code>agent-streaming-middleware.ts</code></td>
           <td class="arrow">&rarr;</td>
           <td><code>agent-middleware-agents-sdk.ts</code></td>
-          <td><code>mapId, conversationId, model, mode, accountId, previousResponseId</code><br><span class="badge badge-breaking">+ provider (Must &mdash; new)</span><br><span style="color:var(--text-muted);font-size:0.78rem;">Note: new vs follow-up already derivable from <code>previousResponseId</code> (null = first message)</span></td>
+          <td><code>mapId, conversationId, model, mode, accountId, previousResponseId</code><br><span class="badge badge-breaking">+ provider (Must &mdash; new)</span> <span class="badge badge-new">+ isNewConversation (already in PR #23685)</span><br><span style="color:var(--text-muted);font-size:0.78rem;">v1: derivable from <code>previousResponseId</code> (null = first message). v2: <code>previousResponseId</code> removed &mdash; replaced by explicit <code>isNewConversation = !requestConversationId</code> in middleware. Also used for prompt conditionals (greeting on first message).</span></td>
         </tr>
         <tr>
           <td><code>AIAgentResponse</code></td>
