@@ -445,7 +445,7 @@
           <td><code>agent-streaming-middleware.ts</code></td>
           <td class="arrow">&rarr;</td>
           <td><code>agent-middleware-agents-sdk.ts</code></td>
-          <td><code>mapId, conversationId, model, mode, accountId</code><br><span class="badge badge-new">+ isNewConversation</span></td>
+          <td><code>mapId, conversationId, model, mode, accountId</code><br><span class="badge badge-new">+ isNewConversation</span> <span class="badge badge-new">+ provider</span></td>
         </tr>
         <tr>
           <td><code>AIAgentResponse</code></td>
@@ -989,7 +989,7 @@
           <td><code>AIAgentConversationStarted</code></td>
           <td class="arrow">&rarr;</td>
           <td><code>AIConversationStarted</code></td>
-          <td><code>+ feature</code></td>
+          <td><code>+ feature, model, provider</code></td>
           <td><span class="badge badge-breaking">Rename + Field</span></td>
         </tr>
         <tr>
@@ -1048,7 +1048,7 @@
           <td><em>(new)</em></td>
           <td></td>
           <td><code>AIModelChanged</code></td>
-          <td><code>feature, mapId, previousModel, newModel, hadConversation</code></td>
+          <td><code>feature, mapId, previousModel, previousProvider, newModel, newProvider, hadConversation</code></td>
           <td><span class="badge badge-new">New</span></td>
         </tr>
         <tr style="background:var(--surface)">
@@ -1165,9 +1165,14 @@
   <span class="field">mapId</span>?: <span class="type">string</span>            <span class="comment">// aiagent, aiagent_assistant</span>
   <span class="field">agentId</span>?: <span class="type">string</span>          <span class="comment">// aiagent only</span>
   <span class="field">mode</span>?: <span class="str">'testing'</span> | <span class="str">'live'</span> <span class="comment">// aiagent only</span>
+  <span class="field">model</span>?: <span class="type">string</span>            <span class="comment">// current model name (e.g. 'gemini-2.5-pro')</span>
+  <span class="field">provider</span>?: <span class="type">ProviderName</span>   <span class="comment">// model provider: 'vertex' | 'openai' | 'bedrock' | 'snowflake' | ...</span>
   <span class="field">connectionId</span>?: <span class="type">string</span>     <span class="comment">// sql-assistant</span>
   <span class="field">workflowId</span>?: <span class="type">string</span>       <span class="comment">// workflow-ai</span>
-}</pre>
+}
+
+<span class="comment">// ProviderName — already defined in workspace-api/providers/constants.ts</span>
+<span class="comment">// 'vertex' | 'google' | 'openai' | 'bedrock' | 'snowflake' | 'databricks' | 'oracle' | 'anthropic' | 'azure' | 'custom'</span></pre>
 
   <p style="color:var(--text-muted);font-size:0.85rem;margin-top:1rem;margin-bottom:0.5rem;"><strong>How each wrapper passes its fields:</strong></p>
   <pre><span class="comment">// useBuilderChatAgent — Builder Agent: map-bound, has testing mode</span>
@@ -1202,7 +1207,8 @@
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
   <span class="field">feature</span>: <span class="str">"aiagent"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-abc-123"</span>,
-  <span class="field">model</span>: <span class="str">"gpt-4o"</span>,
+  <span class="field">model</span>: <span class="str">"gemini-2.5-pro"</span>,
+  <span class="field">provider</span>: <span class="str">"vertex"</span>,
   <span class="field">mapId</span>: <span class="str">"map-abc"</span>,
   <span class="field">agentId</span>: <span class="str">"agent-xyz"</span>,
   <span class="field">mode</span>: <span class="str">"live"</span>
@@ -1213,9 +1219,22 @@
   <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
   <span class="field">feature</span>: <span class="str">"aiagent_assistant"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-def-456"</span>,
-  <span class="field">model</span>: <span class="str">"gpt-4o-mini"</span>,
+  <span class="field">model</span>: <span class="str">"claude-sonnet-4-20250514"</span>,
+  <span class="field">provider</span>: <span class="str">"anthropic"</span>,
   <span class="field">mapId</span>: <span class="str">"map-abc"</span>
   <span class="comment">// no agentId, no mode — not applicable</span>
+}
+
+<span class="comment">// Customer using their own Bedrock setup → Segment receives:</span>
+{
+  <span class="field">event</span>: <span class="str">"AIConversationStarted"</span>,
+  <span class="field">feature</span>: <span class="str">"aiagent"</span>,
+  <span class="field">conversationId</span>: <span class="str">"conv-xyz-999"</span>,
+  <span class="field">model</span>: <span class="str">"anthropic.claude-opus-4-5-20250929"</span>,
+  <span class="field">provider</span>: <span class="str">"bedrock"</span>,
+  <span class="field">mapId</span>: <span class="str">"map-abc"</span>,
+  <span class="field">agentId</span>: <span class="str">"agent-xyz"</span>,
+  <span class="field">mode</span>: <span class="str">"live"</span>
 }
 
 <span class="comment">// Future SQL Assistant → Segment receives:</span>
@@ -1224,12 +1243,13 @@
   <span class="field">feature</span>: <span class="str">"sql-assistant"</span>,
   <span class="field">conversationId</span>: <span class="str">"conv-ghi-789"</span>,
   <span class="field">model</span>: <span class="str">"gpt-4o"</span>,
+  <span class="field">provider</span>: <span class="str">"openai"</span>,
   <span class="field">connectionId</span>: <span class="str">"conn-pqr"</span>
   <span class="comment">// no mapId, no mode, no agentId</span>
 }</pre>
 
   <div class="callout" style="margin-top:0.75rem;">
-    <strong>Every field is a named column in BQ/Segment.</strong> People can <code>SELECT mapId, agentId, mode</code> directly. Fields not applicable to a feature are simply absent (or <code>null</code> in BQ). Adding a new feature = add its field to <code>AIResourceContext</code> + populate it in the wrapper hook. No changes to <code>useChatAgent</code>.
+    <strong>Every field is a named column in BQ/Segment.</strong> People can <code>SELECT mapId, agentId, mode, provider</code> directly. Fields not applicable to a feature are simply absent (or <code>null</code> in BQ). Adding a new feature = add its field to <code>AIResourceContext</code> + populate it in the wrapper hook. No changes to <code>useChatAgent</code>. Provider enables queries like <code>WHERE provider = 'bedrock'</code> without parsing model strings.
   </div>
 
   <!-- 5.3 useChatAgent -->
@@ -1492,23 +1512,24 @@ Every new AI feature must re-implement tracking</div>
     </div>
     <div class="issue-card">
       <h4 style="color:var(--green);">After (proposed)</h4>
-      <div class="flow" style="font-size:0.72rem;line-height:1.7;"><span class="green">useChatAgent</span>({ <span class="highlight">feature</span>, <span class="amber">mapId</span>, <span class="amber">agentId</span>, <span class="amber">mode</span>, ... })
-                 fires ConversationStarted + { <span class="highlight">feature</span>, <span class="amber">mapId</span>, <span class="amber">agentId</span>, <span class="amber">mode</span> }
-                 fires ResponseStopped     + { <span class="highlight">feature</span>, <span class="amber">mapId</span>, <span class="amber">agentId</span>, <span class="amber">mode</span> }
-                 fires ToolExecuted        + { <span class="highlight">feature</span>, <span class="amber">mapId</span>, <span class="amber">agentId</span>, <span class="amber">mode</span>, tool, success }
+      <div class="flow" style="font-size:0.72rem;line-height:1.7;"><span class="green">useChatAgent</span>({ <span class="highlight">feature</span>, <span class="amber">mapId</span>, <span class="amber">agentId</span>, <span class="amber">mode</span>, <span class="amber">model</span>, <span class="amber">provider</span>, ... })
+                 fires ConversationStarted + { <span class="highlight">feature</span>, <span class="amber">model</span>, <span class="amber">provider</span>, <span class="amber">mapId</span> }
+                 fires ResponseStopped     + { <span class="highlight">feature</span>, <span class="amber">model</span>, <span class="amber">provider</span>, <span class="amber">mapId</span> }
+                 fires ToolExecuted        + { <span class="highlight">feature</span>, <span class="amber">model</span>, <span class="amber">provider</span>, tool, success }
 
 <span class="green">ChatContext</span>    provides all named fields to children
-  <span class="green">AnswerMenu</span>    fires Feedback + { <span class="highlight">feature</span>, <span class="amber">mapId</span>, ... }
-  <span class="green">AnswerChart</span>   fires ChartRendered + { <span class="highlight">feature</span>, <span class="amber">mapId</span>, ... }
-  <span class="green">ChatHeader</span>    fires ConversationDel. + { <span class="highlight">feature</span>, <span class="amber">mapId</span>, ... }
+  <span class="green">AnswerMenu</span>    fires Feedback + { <span class="highlight">feature</span>, <span class="amber">model</span>, <span class="amber">provider</span>, ... }
+  <span class="green">AnswerChart</span>   fires ChartRendered + { <span class="highlight">feature</span>, <span class="amber">model</span>, <span class="amber">provider</span>, ... }
+  <span class="green">ChatHeader</span>    fires ConversationDel. + { <span class="highlight">feature</span>, ... }
 
 <span class="green">Every field is a named, typed column in BQ/Segment:</span>
-  aiagent:           <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">agentId</span> + <span class="amber">mode</span>
-  aiagent_assistant: <span class="highlight">feature</span> + <span class="amber">mapId</span>
-  sql-assistant:     <span class="highlight">feature</span> + <span class="amber">connectionId</span>
-  workflow-ai:       <span class="highlight">feature</span> + <span class="amber">workflowId</span>
+  aiagent:           <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">agentId</span> + <span class="amber">mode</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  aiagent_assistant: <span class="highlight">feature</span> + <span class="amber">mapId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  sql-assistant:     <span class="highlight">feature</span> + <span class="amber">connectionId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
+  workflow-ai:       <span class="highlight">feature</span> + <span class="amber">workflowId</span> + <span class="amber">model</span> + <span class="amber">provider</span>
 
-SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</span></div>
+SELECT feature, provider, model FROM ai_events  <span class="green">← just works</span>
+WHERE provider = 'bedrock'                       <span class="green">← no string parsing</span></div>
     </div>
   </div>
 
@@ -1574,7 +1595,7 @@ SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</
           </tr>
           <tr class="priority-must">
             <td><span class="badge badge-breaking">Must</span></td>
-            <td>Fire <code>AIModelChanged</code> when user selects a different model in the <code>FilterDropdown</code>. Include <code>feature</code>, <code>mapId</code>, <code>previousModel</code>, <code>newModel</code>, <code>hadConversation</code> (boolean: was there an active conversation when model was switched?).</td>
+            <td>Fire <code>AIModelChanged</code> when user selects a different model in the <code>FilterDropdown</code>. Include <code>feature</code>, <code>mapId</code>, <code>previousModel</code>, <code>previousProvider</code>, <code>newModel</code>, <code>newProvider</code>, <code>hadConversation</code>. Provider is available from <code>AvailableModel.provider</code> (already in the model object from the selector).</td>
             <td><code>builder/ui/agent/dialog/assistant/AgentAssistantContainer.tsx</code></td>
             <td><span class="complexity"><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
           </tr>
@@ -1623,7 +1644,7 @@ SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</
           </tr>
           <tr class="priority-must">
             <td><span class="badge badge-breaking">Must</span></td>
-            <td>Add <code>feature</code> field to backend events. Extract from URL path (<code>/v2/feature/:feature</code>), include in all events. Also add typed resource fields: <code>mapId</code>, <code>agentId</code>, <code>mode</code> as named optional columns (see Proposal E schema).</td>
+            <td>Add <code>feature</code> + <code>provider</code> fields to backend events. Extract <code>feature</code> from URL path (<code>/v2/feature/:feature</code>); extract <code>provider</code> from <code>ModelInfo.provider</code> (already resolved by <code>ModelsService</code>). Include both in all events. Also add typed resource fields: <code>mapId</code>, <code>agentId</code>, <code>mode</code> as named optional columns (see Proposal E schema).</td>
             <td><code>events-service.ts</code><br><code>agent-middleware-agents-sdk.ts</code><br><code>commons/.../event-types.ts</code></td>
             <td><span class="complexity"><span class="dot filled"></span><span class="dot filled"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></td>
           </tr>
@@ -1666,7 +1687,7 @@ SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</
       </table>
     </div>
     <div class="recommendation" style="margin-top:0.75rem;">
-      <strong>Outcome:</strong> Backend events now include <code>feature</code> + <code>turnId</code> + typed resource fields. Assistant frontend uses v2 API. Both frontend and backend events are aligned for the assistant. BQ queries like <code>SELECT feature, mapId, turnId FROM ai_events</code> work.
+      <strong>Outcome:</strong> Backend events now include <code>feature</code> + <code>turnId</code> + <code>provider</code> + typed resource fields. Assistant frontend uses v2 API. Both frontend and backend events are aligned for the assistant. BQ queries like <code>SELECT feature, provider, model, mapId, turnId FROM ai_events WHERE provider = 'bedrock'</code> work.
     </div>
   </div>
 
@@ -1718,7 +1739,7 @@ SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</
       </table>
     </div>
     <div class="recommendation" style="margin-top:0.75rem;">
-      <strong>Outcome:</strong> All AI features (Builder Agent + Agent Config Assistant) use the shared hook, v2 API, shared chat components, and fire events through one unified system. Every event has <code>feature</code> (matching <code>ai_feature</code> from prompt config) + typed resource fields (<code>mapId</code>, <code>agentId</code>, <code>mode</code>). Every field is a named BQ column. Future AI features plugging into <code>useChatAgent</code> get tracking automatically.
+      <strong>Outcome:</strong> All AI features (Builder Agent + Agent Config Assistant) use the shared hook, v2 API, shared chat components, and fire events through one unified system. Every event has <code>feature</code> (matching <code>ai_feature</code> from prompt config) + <code>model</code> + <code>provider</code> + typed resource fields (<code>mapId</code>, <code>agentId</code>, <code>mode</code>). Every field is a named BQ column. Future AI features plugging into <code>useChatAgent</code> get tracking automatically.
     </div>
   </div>
 
@@ -1731,9 +1752,9 @@ SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</
         |
         v
 <span class="highlight">Phase 2: PR #23685</span> (Backend → Chat Completion) + Agent Config Assistant FE → v2 API
-  <span class="amber">Must add:</span> turnId + feature (from ai_feature) + typed resource fields in backend events
+  <span class="amber">Must add:</span> turnId + feature (from ai_feature) + provider (from ModelInfo) + typed resource fields in backend events
   <span class="amber">Then:</span> update useChatAgent hook for v2 contract (callId, no parent)
-  <span class="green">Events:</span> BE + FE aligned. BQ has feature, turnId, mapId columns
+  <span class="green">Events:</span> BE + FE aligned. BQ has feature, provider, model, turnId, mapId columns
         |
         v
 <span class="highlight">Phase 3: PR #23698 / sc-541427</span> (Agent → shared hook + v2 + components)
@@ -1743,7 +1764,7 @@ SELECT feature, mapId, mode FROM ai_events  <span class="green">← just works</
   <span class="green">Events:</span> fully unified — all features, all fields, all named columns</div>
 
   <div class="callout" style="margin-top:1.5rem;">
-    <strong>Monday meeting action items:</strong> (1) Confirm PR #23767 (Agent Config Assistant) ships first with <code>feature: 'aiagent_assistant'</code> + <code>mapId</code> wired into <code>useChatAgent</code>. (2) Confirm <code>ai_feature</code> from prompt config is the source of truth for the <code>feature</code> field on all events. (3) Agree on <code>turnId</code> + <code>feature</code> + typed resource fields as requirements for PR #23685. (4) Scope PR #23698 to include: Builder Agent &rarr; shared hook, ChatContext update, event deduplication, optional <code>AIAgent*</code> &rarr; <code>AI*</code> rename.
+    <strong>Meeting action items:</strong> (1) Confirm PR #23767 (Agent Config Assistant) ships first with <code>feature: 'aiagent_assistant'</code> + <code>mapId</code> wired into <code>useChatAgent</code>. (2) Confirm <code>ai_feature</code> from prompt config is the source of truth for the <code>feature</code> field on all events. (3) Agree on <code>turnId</code> + <code>feature</code> + <code>provider</code> (from <code>ModelInfo.provider</code>) + typed resource fields as requirements for PR #23685. (4) Scope PR #23698 to include: Builder Agent &rarr; shared hook, ChatContext update, event deduplication, optional <code>AIAgent*</code> &rarr; <code>AI*</code> rename. (5) Confirm <code>provider</code> is an explicit named field on all events that carry <code>model</code> &mdash; no parsing of <code>::</code> separators in BQ.
   </div>
 </section>
 
